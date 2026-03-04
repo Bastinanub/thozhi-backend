@@ -1,22 +1,37 @@
-# Build folders
-dist/
+# ---------- Frontend ----------
 node_modules/
+dist/
+build/
 
-# Cloudflare / worker
+# ---------- Cloudflare / Workers ----------
 .wrangler/
 worker-configuration.d.ts
 
-# Python
+# ---------- Python ----------
 venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Environment variables
+# ---------- Python cache ----------
+*.log
+.cache/
+.pytest_cache/
+
+# ---------- Environment variables ----------
 .env
 .env.*
+*.env
 
-# Databases
+# ---------- Databases ----------
 *.sqlite3
+*.db
 
-# OS files
+# ---------- Generated reports ----------
+reports/
+*.pdf
+
+# ---------- OS files ----------
 .DS_Store
+Thumbs.db

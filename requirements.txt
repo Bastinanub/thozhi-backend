@@ -1,6 +1,7 @@
-fastapi
-uvicorn
-sqlmodel
-python-dotenv
-pandas
-numpy
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+sqlmodel==0.0.16
+python-dotenv==1.0.1
+pandas==2.2.2
+numpy==1.26.4
+reportlab==4.1.0
