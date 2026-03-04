@@ -1,0 +1,22 @@
+# Build folders
+dist/
+node_modules/
+
+# Cloudflare / worker
+.wrangler/
+worker-configuration.d.ts
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+.env.*
+
+# Databases
+*.sqlite3
+
+# OS files
+.DS_Store
