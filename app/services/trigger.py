@@ -6,36 +6,53 @@ from collections import deque
 # -----------------------------
 
 DEPRESSION_KEYWORDS = {
-    # Single-word
     "sad", "hopeless", "worthless", "empty", "tired", "exhausted",
     "lonely", "helpless", "crying", "numb", "unmotivated", "depressed",
     "low", "defeated", "hollow", "withdrawn", "isolated", "tearful",
-    # Multi-word
     "no energy", "lost interest", "nothing matters", "cant get up",
     "no point", "feel nothing", "hate myself", "given up", "no motivation",
     "cant stop crying", "feel like a burden",
 }
 
 ANXIETY_KEYWORDS = {
-    # Single-word
     "anxious", "anxiety", "panic", "worried", "worry", "fear", "nervous",
     "restless", "scared", "uneasy", "stressed", "stress", "dread", "overwhelmed",
     "tense", "jittery", "paranoid",
-    # Multi-word
     "panic attack", "overthinking", "heart racing", "heart beating fast",
     "palpitations", "cant breathe", "shortness of breath", "feel trapped",
     "mind wont stop", "worst case", "going to fail", "something bad",
 }
 
-# How many recent messages to consider
-WINDOW_SIZE = 5
+# Phrases that mean the user is explicitly asking for a questionnaire
+EXPLICIT_REQUEST_PATTERNS = [
+    # Depression / PHQ-9
+    r"\bphq\b", r"\bphq.?9\b",
+    r"\bdepress\w*\s+(test|quiz|check|questionnaire|screening|assessment)\b",
+    r"\b(test|check|assess|screen)\s+(my\s+)?(depression|mood)\b",
+    r"\bam i (depressed|feeling depressed)\b",
+    r"\btake\s+(a\s+)?(depression|phq)\b",
 
-# Minimum score to trigger questionnaire (tune as needed)
-DEPRESSION_THRESHOLD = 3
-ANXIETY_THRESHOLD = 3
+    # Anxiety / GAD-7
+    r"\bgad\b", r"\bgad.?7\b",
+    r"\banxi\w*\s+(test|quiz|check|questionnaire|screening|assessment)\b",
+    r"\b(test|check|assess|screen)\s+(my\s+)?(anxiety)\b",
+    r"\bam i (anxious|having anxiety)\b",
+    r"\btake\s+(a\s+)?(anxiety|gad)\b",
 
-# After triggering, ignore further triggers for this many messages
-COOLDOWN_MESSAGES = 10
+    # Generic questionnaire requests
+    r"\b(start|take|do|begin|give me|run|open)\s+(a\s+)?(questionnaire|quiz|test|screening|assessment)\b",
+    r"\bquestion(naire)?\b.*\b(depression|anxiety|mood|mental health)\b",
+    r"\b(mental health|mood)\b.*\b(test|check|quiz|questionnaire)\b",
+    r"\bi want (to )?(take|do|answer)\b",
+    r"\bcheck (my|on my) (mental health|mood|anxiety|depression)\b",
+]
+
+# Window and threshold settings
+WINDOW_SIZE           = 3   # messages to look back
+DEPRESSION_THRESHOLD  = 2   # keyword hits across window to auto-trigger
+ANXIETY_THRESHOLD     = 2
+INSTANT_THRESHOLD     = 2   # keyword hits in a SINGLE message → trigger immediately
+COOLDOWN_MESSAGES     = 10
 
 
 # -----------------------------
@@ -43,25 +60,31 @@ COOLDOWN_MESSAGES = 10
 # -----------------------------
 
 def normalize_text(text: str) -> str:
-    """Lowercase, strip punctuation but preserve spaces for multi-word matching."""
     text = text.lower()
-    # Remove all punctuation except spaces
     text = re.sub(r"[^a-z\s]", "", text)
-    # Collapse multiple spaces
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
 def keyword_score(text: str, keywords: set) -> int:
+    return sum(1 for kw in keywords if kw in text)
+
+
+def _check_explicit_request(text: str) -> dict:
     """
-    Count keyword matches. Multi-word keywords are matched as substrings.
-    Each keyword match counts once per message (not per occurrence in the message).
+    Check if the user is directly asking for a questionnaire.
+    Returns trigger dict or None.
     """
-    score = 0
-    for kw in keywords:
-        if kw in text:
-            score += 1
-    return score
+    for pattern in EXPLICIT_REQUEST_PATTERNS:
+        if re.search(pattern, text):
+            # Determine which type they're asking for
+            if re.search(r"\bdepress\w*|phq\b", text):
+                return {"triggered": True, "type": "depression", "confidence": 99, "cooldown_active": False, "reason": "explicit_request"}
+            if re.search(r"\banxi\w*|gad\b", text):
+                return {"triggered": True, "type": "anxiety",    "confidence": 99, "cooldown_active": False, "reason": "explicit_request"}
+            # Generic request — default to depression screening
+            return {"triggered": True, "type": "depression", "confidence": 99, "cooldown_active": False, "reason": "explicit_request"}
+    return None
 
 
 # -----------------------------
@@ -70,155 +93,133 @@ def keyword_score(text: str, keywords: set) -> int:
 
 class TriggerDetector:
     """
-    Stateful trigger detector that evaluates scores across a sliding window
-    of recent messages. Includes a cooldown to prevent repeated triggering.
+    Stateful trigger detector with three trigger modes:
+    1. Explicit request  — user directly asks for a questionnaire (instant)
+    2. Single-message    — enough keywords in one message (instant)
+    3. Window-based      — keywords accumulate across recent messages
     """
 
     def __init__(
         self,
-        window_size: int = WINDOW_SIZE,
+        window_size: int          = WINDOW_SIZE,
         depression_threshold: int = DEPRESSION_THRESHOLD,
-        anxiety_threshold: int = ANXIETY_THRESHOLD,
-        cooldown_messages: int = COOLDOWN_MESSAGES,
+        anxiety_threshold: int    = ANXIETY_THRESHOLD,
+        instant_threshold: int    = INSTANT_THRESHOLD,
+        cooldown_messages: int    = COOLDOWN_MESSAGES,
     ):
-        self.window_size = window_size
+        self.window_size          = window_size
         self.depression_threshold = depression_threshold
-        self.anxiety_threshold = anxiety_threshold
-        self.cooldown_messages = cooldown_messages
+        self.anxiety_threshold    = anxiety_threshold
+        self.instant_threshold    = instant_threshold
+        self.cooldown_messages    = cooldown_messages
 
-        # Stores (depression_score, anxiety_score) per message
-        self._window: deque = deque(maxlen=window_size)
-        # Counts down after a trigger fires; no new trigger while > 0
-        self._cooldown_remaining: int = 0
+        self._window: deque       = deque(maxlen=window_size)
+        self._cooldown_remaining  = 0
 
     def add_message(self, user_message: str) -> dict:
-        """
-        Process a new user message and return trigger info.
-
-        Returns:
-            {
-                "triggered": bool,
-                "type": "depression" | "anxiety" | None,
-                "confidence": int,   # total keyword hits across window
-                "cooldown_active": bool
-            }
-        """
         text = normalize_text(user_message)
+
+        # ── 1. Explicit request — always fires, even during cooldown ──────────
+        explicit = _check_explicit_request(text)
+        if explicit:
+            self._cooldown_remaining = self.cooldown_messages
+            self._window.clear()
+            return explicit
 
         dep_score = keyword_score(text, DEPRESSION_KEYWORDS)
         anx_score = keyword_score(text, ANXIETY_KEYWORDS)
-
         self._window.append((dep_score, anx_score))
 
-        # Tick cooldown down
+        # ── Cooldown check (after explicit request bypass above) ──────────────
         if self._cooldown_remaining > 0:
             self._cooldown_remaining -= 1
-            return {
-                "triggered": False,
-                "type": None,
-                "confidence": 0,
-                "cooldown_active": True,
-            }
+            return {"triggered": False, "type": None, "confidence": 0, "cooldown_active": True}
 
-        # Aggregate scores across the window
+        # ── 2. Single-message instant trigger ─────────────────────────────────
+        if dep_score >= self.instant_threshold or anx_score >= self.instant_threshold:
+            trigger_type = "depression" if dep_score >= anx_score else "anxiety"
+            confidence   = max(dep_score, anx_score)
+            self._cooldown_remaining = self.cooldown_messages
+            self._window.clear()
+            return {"triggered": True, "type": trigger_type, "confidence": confidence, "cooldown_active": False, "reason": "instant"}
+
+        # ── 3. Window-based accumulation ──────────────────────────────────────
         total_dep = sum(d for d, _ in self._window)
         total_anx = sum(a for _, a in self._window)
 
-        dep_triggered = total_dep >= self.depression_threshold
-        anx_triggered = total_anx >= self.anxiety_threshold
-
-        if dep_triggered or anx_triggered:
-            # Pick the higher score; tie → prefer depression
-            if total_dep >= total_anx:
-                trigger_type = "depression"
-                confidence = total_dep
-            else:
-                trigger_type = "anxiety"
-                confidence = total_anx
-
-            # Start cooldown and clear window so scores don't carry over
+        if total_dep >= self.depression_threshold or total_anx >= self.anxiety_threshold:
+            trigger_type = "depression" if total_dep >= total_anx else "anxiety"
+            confidence   = max(total_dep, total_anx)
             self._cooldown_remaining = self.cooldown_messages
             self._window.clear()
+            return {"triggered": True, "type": trigger_type, "confidence": confidence, "cooldown_active": False, "reason": "window"}
 
-            return {
-                "triggered": True,
-                "type": trigger_type,
-                "confidence": confidence,
-                "cooldown_active": False,
-            }
-
-        return {
-            "triggered": False,
-            "type": None,
-            "confidence": 0,
-            "cooldown_active": False,
-        }
+        return {"triggered": False, "type": None, "confidence": 0, "cooldown_active": False}
 
     def reset(self):
-        """Fully reset state (e.g. new session or after questionnaire completed)."""
         self._window.clear()
         self._cooldown_remaining = 0
 
 
 # -----------------------------
-# Convenience wrapper (stateless, single message)
-# Use TriggerDetector class for production
+# Stateless single-message wrapper
+# Used by chat.py — still works, now with explicit request detection
 # -----------------------------
 
 def detect_trigger(user_message: str) -> dict:
-    """
-    Stateless single-message check. Useful for quick testing.
-    NOTE: For production use, instantiate TriggerDetector and call add_message().
-    """
     text = normalize_text(user_message)
+
+    # Explicit request always wins
+    explicit = _check_explicit_request(text)
+    if explicit:
+        return explicit
+
     dep = keyword_score(text, DEPRESSION_KEYWORDS)
     anx = keyword_score(text, ANXIETY_KEYWORDS)
 
     if dep == 0 and anx == 0:
         return {"triggered": False, "type": None, "confidence": 0}
 
-    if dep >= anx:
-        return {"triggered": dep >= DEPRESSION_THRESHOLD, "type": "depression", "confidence": dep}
-    else:
-        return {"triggered": anx >= ANXIETY_THRESHOLD, "type": "anxiety", "confidence": anx}
+    # Instant trigger on single message
+    if dep >= INSTANT_THRESHOLD or anx >= INSTANT_THRESHOLD:
+        trigger_type = "depression" if dep >= anx else "anxiety"
+        return {"triggered": True, "type": trigger_type, "confidence": max(dep, anx)}
+
+    # Single keyword — not enough on its own
+    return {"triggered": False, "type": None, "confidence": 0}
 
 
 # -----------------------------
-# Quick smoke test
+# Smoke test
 # -----------------------------
 
 if __name__ == "__main__":
-    detector = TriggerDetector(
-        window_size=5,
-        depression_threshold=3,
-        anxiety_threshold=3,
-        cooldown_messages=10,
-    )
+    detector = TriggerDetector()
 
-    conversation = [
-        "I've just been feeling really sad lately",
-        "Everything feels so empty and hopeless",
-        "I don't know, I'm just so exhausted all the time",
-        "Nothing matters anymore honestly",
-        "I just feel so numb",  # should trigger depression here
-        "I'm doing a bit better today",
-        "Though I have been really anxious about work",
-        "My heart keeps racing and I can't breathe properly",
-        "I keep overthinking everything, it's exhausting",
-        "I feel so stressed and nervous all the time",          # cooldown active
-        "I feel so stressed and nervous all the time still",    # cooldown active
-        "Still panicking about everything",                     # cooldown ends, new window starts
-        "Worried about everything all the time",
-        "Heart racing again, I feel so scared",
-        "I just feel so overwhelmed and dread everything",      # should trigger anxiety here
+    tests = [
+        # Explicit requests
+        "can i take a depression test?",
+        "i want to do the PHQ-9",
+        "check my anxiety please",
+        "give me a questionnaire",
+        "start the screening",
+        # Single-message instant
+        "i feel so sad and hopeless today",
+        "i am so anxious and stressed and scared",
+        # Window-based
+        "i have been feeling a bit low",
+        "just really tired lately",
+        # Neutral
+        "i had a good day today",
     ]
 
     print("=== Trigger Pipeline Test ===\n")
-    for i, msg in enumerate(conversation, 1):
+    for msg in tests:
         result = detector.add_message(msg)
         status = ""
         if result["triggered"]:
-            status = f"  🚨 TRIGGER → {result['type'].upper()} questionnaire (confidence: {result['confidence']})"
+            reason = result.get("reason", "")
+            status = f"  🚨 {result['type'].upper()} [{reason}] (confidence: {result['confidence']})"
         elif result["cooldown_active"]:
-            status = "  ⏳ cooldown active"
-        print(f"[{i:02}] {msg[:60]:<60}{status}")
+            status = "  ⏳ cooldown"
+        print(f"  {msg[:55]:<55}{status}")
