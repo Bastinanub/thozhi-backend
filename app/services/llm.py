@@ -4,6 +4,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from typing import Iterator, List, Dict, Optional
+import requests
 
 # -----------------------------
 # Ollama configuration
