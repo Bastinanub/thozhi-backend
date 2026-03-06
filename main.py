@@ -24,7 +24,12 @@ def on_startup():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://thozhi-frontend.vercel.app"],
+    allow_origins=[
+        "https://thozhi-frontend-git-main-bastin-k-js-projects.vercel.app",  # actual Vercel URL
+        "https://thozhi-frontend.vercel.app",   # keep for any future cleaner domain
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
