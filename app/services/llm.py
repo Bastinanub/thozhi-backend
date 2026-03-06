@@ -4,21 +4,20 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from typing import Iterator, List, Dict, Optional
-import requests
 
 # -----------------------------
-# Ollama configuration
+# Groq configuration
 # -----------------------------
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-MODEL_NAME  = os.getenv("MODEL_NAME", "phi3:mini")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
+MODEL_NAME   = os.getenv("MODEL_NAME", "llama-3.1-8b-instant")  # fast, free, great quality
 
 # -----------------------------
 # Persistent HTTP session
-# (reuses the TCP connection instead of opening a new one every message)
 # -----------------------------
 _session = requests.Session()
 _session.mount(
-    "http://",
+    "https://",
     HTTPAdapter(
         max_retries=Retry(total=2, backoff_factor=0.3),
         pool_connections=1,
@@ -27,8 +26,7 @@ _session.mount(
 )
 
 # -----------------------------
-# Thozhi Persona — trimmed for CPU speed
-# Shorter prompt = fewer tokens to process on every single call
+# Thozhi Persona
 # -----------------------------
 SYSTEM_PROMPT = """\
 You are Thozhi, a warm and caring friend who listens without judgment.
@@ -55,31 +53,22 @@ Keep responses to 2–3 short sentences. No lists. No meta commentary.\
 """
 
 # -----------------------------
-# Chat — streaming version
-# Yields text chunks as they arrive so the UI can display them word by word.
+# Streaming chat via Groq
 # -----------------------------
 def chat_stream(
     user_message: str,
     conversation_history: Optional[List[Dict[str, str]]] = None,
 ) -> Iterator[str]:
     """
-    Streams Thozhi's reply token by token via Ollama's /api/chat endpoint.
-
-    Yields:
-        str — each chunk of text as it's generated
-
-    Usage (terminal / backend):
-        for chunk in chat_stream("I feel so tired"):
-            print(chunk, end="", flush=True)
-
-    Usage (FastAPI / Flask SSE):
-        return StreamingResponse(chat_stream(msg, history), media_type="text/plain")
+    Streams Thozhi's reply token by token via Groq's OpenAI-compatible API.
+    Yields str chunks as they arrive.
     """
+    if not GROQ_API_KEY:
+        yield "Configuration issue — GROQ_API_KEY is not set on the server."
+        return
 
-    # Build the messages list for /api/chat
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Last 4 turns of history  (8 messages: 4 user + 4 assistant)
     if conversation_history:
         for turn in conversation_history[-4:]:
             if turn.get("user"):
@@ -91,40 +80,45 @@ def chat_stream(
 
     try:
         with _session.post(
-            f"{OLLAMA_URL}/api/chat",
+            GROQ_URL,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type":  "application/json",
+            },
             json={
-                "model":  MODEL_NAME,
-                "messages": messages,
-                "stream": True,
-                "options": {
-                    # --- Speed knobs for CPU ---
-                    "num_predict":   80,   # hard cap on output tokens; keeps replies short
-                    "num_ctx":       512,  # context window — smaller = much faster on CPU
-                    "temperature":   0.6,  # slightly higher than before for a warmer, less robotic feel
-                    "top_p":         0.85,
-                    "repeat_penalty": 1.1, # discourages repetitive filler phrases
-                    # Clean stop tokens — no system-prompt phrases that cause early cutoff
-                    "stop": ["\nUser:", "\n\nUser:", "Human:"],
-                },
+                "model":       MODEL_NAME,
+                "messages":    messages,
+                "stream":      True,
+                "max_tokens":  120,
+                "temperature": 0.6,
+                "top_p":       0.85,
             },
             stream=True,
-            timeout=90,
+            timeout=30,   # Groq is fast — 30s is generous
         ) as resp:
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
                 if not raw_line:
                     continue
+
+                line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+
+                # SSE lines look like: "data: {...}" or "data: [DONE]"
+                if not line.startswith("data:"):
+                    continue
+
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+
                 try:
-                    chunk = json.loads(raw_line)
+                    chunk = json.loads(payload)
                 except json.JSONDecodeError:
                     continue
 
-                token = chunk.get("message", {}).get("content", "")
+                token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                 if token:
                     yield token
-
-                if chunk.get("done"):
-                    break
 
     except requests.exceptions.ConnectionError:
         yield (
@@ -133,9 +127,17 @@ def chat_stream(
         )
     except requests.exceptions.Timeout:
         yield (
-            "That took a little longer than expected on my end. "
+            "That took a little longer than expected. "
             "You can send that again whenever you're ready."
         )
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 401:
+            yield "There's an issue with the server configuration. Please try again later."
+        else:
+            yield (
+                "Something small went wrong on my side. "
+                "I'm still with you — just give it another try."
+            )
     except requests.exceptions.RequestException:
         yield (
             "Something small went wrong on my side. "
@@ -144,18 +146,17 @@ def chat_stream(
 
 
 # -----------------------------
-# Non-streaming wrapper
-# For callers that want the full response as one string.
+# Blocking wrapper
 # -----------------------------
 def chat(
     user_message: str,
     conversation_history: Optional[List[Dict[str, str]]] = None,
 ) -> str:
-    """
-    Blocking version — collects the full streamed response and returns it.
-    Prefer chat_stream() wherever you can render incrementally.
-    """
     return "".join(chat_stream(user_message, conversation_history))
+
+
+# Backward-compat alias
+chat_with_llm = chat
 
 
 # -----------------------------
@@ -163,22 +164,17 @@ def chat(
 # -----------------------------
 if __name__ == "__main__":
     history = []
-
-    print("Thozhi is ready. Type 'quit' to exit.\n")
+    print("Thozhi is ready (Groq). Type 'quit' to exit.\n")
     while True:
         user_input = input("You: ").strip()
         if user_input.lower() in ("quit", "exit"):
             break
         if not user_input:
             continue
-
         print("Thozhi: ", end="", flush=True)
         full_response = ""
         for chunk in chat_stream(user_input, history):
             print(chunk, end="", flush=True)
             full_response += chunk
-        print()  # newline after response
-
+        print()
         history.append({"user": user_input, "bot": full_response})
-        # Backward-compat alias so existing imports don't break
-chat_with_llm = chat
