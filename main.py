@@ -25,8 +25,8 @@ def on_startup():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://thozhi-frontend-git-main-bastin-k-js-projects.vercel.app",  # actual Vercel URL
-        "https://thozhi-frontend.vercel.app",   # keep for any future cleaner domain
+        "https://thozhi-frontend-git-main-bastin-k-js-projects.vercel.app",
+        "https://thozhi-frontend.vercel.app",
         "http://localhost:3000",
         "http://localhost:5173",
     ],
@@ -38,7 +38,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(chat_router, prefix="/api")
-app.include_router(report_router)
+app.include_router(report_router, prefix="/api")   # ← fixed
 app.include_router(research_router)
 app.include_router(metrics_router)
 
