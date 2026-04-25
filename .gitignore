@@ -1,0 +1,37 @@
+# ---------- Frontend ----------
+node_modules/
+dist/
+build/
+
+# ---------- Cloudflare / Workers ----------
+.wrangler/
+worker-configuration.d.ts
+
+# ---------- Python ----------
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ---------- Python cache ----------
+*.log
+.cache/
+.pytest_cache/
+
+# ---------- Environment variables ----------
+.env
+.env.*
+*.env
+
+# ---------- Databases ----------
+*.sqlite3
+*.db
+
+# ---------- Generated reports ----------
+reports/
+*.pdf
+
+# ---------- OS files ----------
+.DS_Store
+Thumbs.db
