@@ -41,19 +41,20 @@ class ChatResponse(BaseModel):
 
 
 # -----------------------------
-# Professional conversational phrasing
+# Friendly conversational phrasing
 # -----------------------------
 
+# Transition into questionnaire — varied so it doesn't feel robotic
 _QUESTIONNAIRE_INTROS = [
-    "I'd like to understand how you're feeling a little better 🌸 Would you mind if I asked you a few short questions? It will only take a moment.",
-    "I can sense that things feel difficult right now 💛 May I ask you a few simple questions? It'll help me get a clearer picture of how you're doing.",
-    "I'd like to check in with you more carefully 🤗 I have a few brief questions — very straightforward, just choose a number that feels right for you.",
-    "I want to make sure I'm truly understanding what you're going through 💬 Could we do a quick check-in together? Just a few questions.",
-    "I'm here with you 🌿 Let me ask you a few things so I can better support you — nothing to worry about, just a gentle check-in.",
+    "Hey, I just want to understand how you're feeling a little better 🌸 Mind if I ask you a few quick questions? It'll only take a minute!",
+    "I can hear that things feel heavy right now 💛 Can I ask you a few small questions? Just to get a clearer picture, okay?",
+    "You know what, let me check in with you properly 🤗 I've got a few short questions — super simple, just pick a number. Ready?",
+    "I want to make sure I'm really understanding you 💬 Can we do a quick little check-in together? Just a few questions!",
+    "I'm here with you 🌿 Let me ask you a few things so I can understand better — nothing scary, just a small check-in, okay?",
 ]
 
 _OPTIONS_TEXT = (
-    "Please choose the number that feels most true for you:\n\n"
+    "Just pick the number that feels most true for you:\n\n"
     "0 — Not at all\n"
     "1 — Several days\n"
     "2 — More than half the days\n"
@@ -61,43 +62,24 @@ _OPTIONS_TEXT = (
 )
 
 _QUESTIONNAIRE_COMPLETE_MSGS = [
-    "Thank you so much for answering all of that 🎉 It takes real courage to reflect on how you're feeling. Here's what I found:",
-    "I truly appreciate you sharing all of that with me 🙏 That wasn't easy, and I want you to know it matters. Here's your result:",
-    "You did wonderfully working through all of those questions 💛 Here's what the scores indicate:",
-    "Thank you for being so open with me 🌸 Here's what your responses show:",
+    "Superb! 🎉 You did great answering all of that. Here's what I found:",
+    "thank you so much for sharing all of that with me 🙏 That takes courage. Here's your result:",
+    "You're amazing for going through all of that 💛 Seriously. Here's what the scores say:",
+    "Nandri for being so open with me 🌸 Here's what your answers show:",
 ]
 
 _TRANSITION_PHRASES = [
-    "Understood. Moving to the next one 👉",
-    "Thank you for that. Here's the next question —",
-    "Got it 😊 Here's the next one:",
-    "Noted. Almost there —",
-    "You're doing really well! Next question 💪",
-    "Appreciated. Here's the next —",
+    "Okay, next one 👉",
+    "Got it! Moving on —",
+    "Seri, here's the next one 😊",
+    "Okay, almost there —",
+    "You're doing great! Next question 💪",
+    "Noted! Here's the next —",
 ]
 
 
 def _random(lst: list) -> str:
     return random.choice(lst)
-
-
-# -----------------------------
-# Persona system prompt
-# -----------------------------
-
-THOZHI_SYSTEM_PROMPT = """You are Thozhi, a warm, empathetic, and professional mental wellness companion.
-
-Your communication style:
-- Speak in a calm, caring, and professional tone at all times
-- Use clear, simple English that feels approachable but never casual or informal
-- You may use supportive emojis where appropriate (💛 🌸 🙏 🤗 🌿 💬)
-- Never use informal words, slang, or colloquial terms such as "da", "machan", "machi", "chellam", "yaar", "bro", "dude", "ayyo", "aiyyo", or any regional slang
-- Always be respectful, non-judgmental, and compassionate
-- Never provide diagnoses, prescriptions, or medical advice
-- Never make definitive claims — always encourage professional consultation
-- Mirror the user's language (Tamil / English / Tanglish) only in terms of vocabulary, never in slang
-- Keep responses concise and meaningful — avoid being overly wordy
-- Your role is to support and listen, not to solve or prescribe"""
 
 
 # -----------------------------
@@ -114,21 +96,21 @@ def _handle_questionnaire_or_trigger(session, msg_raw, history, db):
             return {
                 "type": "response",
                 "reply": (
-                    "Thank you so much for agreeing — I'm really glad you're here 🙏\n\n"
-                    "This is a safe, judgment-free space. "
-                    "Please feel free to share whatever is on your mind 💛\n\n"
-                    "So, how are you feeling today? 😊"
+                    "Ayyo, thank you so much! 🙏 I'm really glad you're here.\n\n"
+                    "This is a safe space — no judgment, no pressure. "
+                    "Just talk to me like you'd talk to a friend 💛\n\n"
+                    "So tell me... how are you feeling today? 😊"
                 ),
                 "next_action": "continue_chat",
                 "report": None,
             }
-        elif msg in ["no", "decline", "nope", "illai", "no thanks"]:
+        elif msg in ["no", "decline", "nope", "no thanks"]:
             return {
                 "type": "response",
                 "reply": (
-                    "That's completely okay 🙏 "
-                    "Your privacy is important and I respect your decision. "
-                    "Please take care of yourself, and know that support is always available when you're ready 🌸"
+                    "no worries at all! 🙏 "
+                    "Your privacy is important. You can close this page safely. "
+                    "Take care of yourself! 🌸"
                 ),
                 "next_action": "stop",
                 "report": None,
@@ -137,11 +119,11 @@ def _handle_questionnaire_or_trigger(session, msg_raw, history, db):
             return {
                 "type": "response",
                 "reply": (
-                    "Hello! 🙏 I'm Thozhi — your personal wellness companion.\n\n"
-                    "Before we begin, I'd like to be transparent with you 😊\n\n"
-                    "This chatbot is part of a research study. Your conversations may be stored "
-                    "anonymously to help improve mental health support for others.\n\n"
-                    "Do you agree to continue? Please type YES or NO — there is absolutely no pressure 💛"
+                    "Vanakkam! 🙏 I'm Thozhi — your friendly wellness companion.\n\n"
+                    "Before we start chatting, I want to be upfront with you 😊\n\n"
+                    "This chatbot is part of a research study, and your conversations "
+                    "may be stored anonymously to help us improve mental health support.\n\n"
+                    "Do you agree to continue? Just type YES or NO — no pressure! 💛"
                 ),
                 "next_action": "await_consent",
                 "report": None,
@@ -157,8 +139,8 @@ def _handle_questionnaire_or_trigger(session, msg_raw, history, db):
             return {
                 "type": "response",
                 "reply": (
-                    "I appreciate your response 😊 For this question, I need a number between 0 and 3. "
-                    "Please reply with 0, 1, 2, or 3 — whichever feels most accurate for you."
+                    "Oops! 😅 I only understand numbers for this one. "
+                    "Please reply with 0, 1, 2, or 3 — whichever feels right!"
                 ),
                 "next_action": "await_answer",
                 "report": None,
@@ -185,12 +167,7 @@ def _handle_questionnaire_or_trigger(session, msg_raw, history, db):
                 f"{next_q['question']}\n\n"
                 f"{_OPTIONS_TEXT}"
             )
-            return {
-                "type": "response",
-                "reply": reply,
-                "next_action": "ask_next_question",
-                "report": None,
-            }
+            return {"type": "response", "reply": reply, "next_action": "ask_next_question", "report": None}
 
         # ── Questionnaire complete ────────────────────────────────────────────
         if session["mode"] == "phq9":
@@ -213,16 +190,11 @@ def _handle_questionnaire_or_trigger(session, msg_raw, history, db):
             f"{completion_msg}\n\n"
             f"📊 {tool} Score: {score}\n"
             f"🔍 {interpretation}\n\n"
-            "Please remember — this is a screening result, not a clinical diagnosis. "
-            "You are not alone, and support is always available 💛\n\n"
+            "Remember — this is a screening result, not a diagnosis. "
+            "You're not alone in this, da 💛\n\n"
             "You can download your full report below 👇"
         )
-        return {
-            "type": "response",
-            "reply": reply,
-            "next_action": "report_generated",
-            "report": report,
-        }
+        return {"type": "response", "reply": reply, "next_action": "report_generated", "report": report}
 
     # ── NORMAL CHAT — check trigger ───────────────────────────────────────────
     trigger = detect_trigger(msg_raw)
@@ -240,7 +212,7 @@ def _handle_questionnaire_or_trigger(session, msg_raw, history, db):
         else:
             return {"type": "stream", "next_action": "continue_chat"}
 
-        # Explicit request — skip LLM preamble, go straight to questionnaire
+        # For explicit requests skip the LLM preamble — go straight to questionnaire
         if trigger.get("reason") == "explicit_request":
             intro = _random(_QUESTIONNAIRE_INTROS)
             reply = (
@@ -248,14 +220,9 @@ def _handle_questionnaire_or_trigger(session, msg_raw, history, db):
                 f"Question 1 —\n{q['question']}\n\n"
                 f"{_OPTIONS_TEXT}"
             )
-            return {
-                "type": "response",
-                "reply": reply,
-                "next_action": "start_questionnaire",
-                "report": None,
-            }
+            return {"type": "response", "reply": reply, "next_action": "start_questionnaire", "report": None}
 
-        # Keyword-triggered — LLM responds first, then questionnaire follows
+        # For keyword-triggered — LLM responds first, then questionnaire follows
         questionnaire_suffix = (
             f"\n\n{_random(_QUESTIONNAIRE_INTROS)}\n\n"
             f"Question 1 —\n{q['question']}\n\n"
@@ -284,17 +251,9 @@ def chat_endpoint(payload: ChatRequest, db: Session = Depends(get_db)):
 
     if result["type"] == "response":
         log_chat(db, payload.session_id, "bot", result["reply"])
-        return ChatResponse(
-            reply=result["reply"],
-            next_action=result["next_action"],
-            report=result.get("report"),
-        )
+        return ChatResponse(reply=result["reply"], next_action=result["next_action"], report=result.get("report"))
 
-    llm_reply = chat_with_llm(
-        payload.message,
-        history,
-        system_prompt=THOZHI_SYSTEM_PROMPT,
-    )
+    llm_reply = chat_with_llm(payload.message, history)
 
     if result["type"] == "stream_with_suffix":
         full_reply = llm_reply + result["suffix"]
@@ -331,11 +290,7 @@ async def chat_stream_endpoint(payload: ChatRequest, db: Session = Depends(get_d
     def _sse_generator():
         full_reply = ""
 
-        for token in chat_stream(
-            payload.message,
-            history,
-            system_prompt=THOZHI_SYSTEM_PROMPT,
-        ):
+        for token in chat_stream(payload.message, history):
             full_reply += token
             yield f"data: {json.dumps({'token': token, 'done': False, 'next_action': None, 'report': None})}\n\n"
 
